@@ -461,6 +461,77 @@ SettingsSection:AddDropdown("ThemeDropdown", {
     end
 })
 
+-- Thêm section Redeem Codes
+local RedeemSection = SettingsTab:AddSection("Redeem Codes")
+
+-- Nút Redeem All Codes
+RedeemSection:AddButton({
+    Title = "Redeem All Codes",
+    Callback = function()
+        local codes = {
+            "Release",
+            "SorryForDelay",
+            "SorryForShutdown",
+            "50KActive",
+            "1MVisits",
+            "InBugSagaWeTrust"
+        }
+        
+        -- Redeem tất cả code
+        spawn(function()
+            for _, code in ipairs(codes) do
+                local success, err = pcall(function()
+                    local args = {
+                        code
+                    }
+                    game:GetService("ReplicatedStorage"):WaitForChild("Event"):WaitForChild("Codes"):FireServer(unpack(args))
+                end)
+                
+                if success then
+                    print("Đã redeem code: " .. code)
+                else
+                    warn("Lỗi khi redeem code " .. code .. ": " .. tostring(err))
+                end
+                
+                -- Đợi một khoảng thời gian ngắn giữa các lần redeem
+                wait(0.5)
+            end
+            
+            -- Hiển thị thông báo khi đã redeem xong tất cả codes
+            print("Đã redeem tất cả các codes!")
+        end)
+    end
+})
+
+-- Thêm input box cho custom code
+local customCodeInput = nil
+customCodeInput = RedeemSection:AddInput("CustomCodeInput", {
+    Title = "Custom Code",
+    Placeholder = "Nhập code tại đây",
+    Numeric = false,
+    Finished = true,
+    Callback = function(Value)
+        if Value and Value ~= "" then
+            local success, err = pcall(function()
+                local args = {
+                    Value
+                }
+                game:GetService("ReplicatedStorage"):WaitForChild("Event"):WaitForChild("Codes"):FireServer(unpack(args))
+            end)
+            
+            if success then
+                print("Đã redeem code: " .. Value)
+                -- Reset input box sau khi redeem
+                if customCodeInput and customCodeInput.Set then
+                    customCodeInput:Set("")
+                end
+            else
+                warn("Lỗi khi redeem code " .. Value .. ": " .. tostring(err))
+            end
+        end
+    end
+})
+
 -- Auto Save Config
 local function AutoSaveConfig()
     spawn(function()
