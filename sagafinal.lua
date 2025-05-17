@@ -1,4 +1,3 @@
-
 -- Anime Saga Script
 
 -- Hệ thống kiểm soát logs
@@ -45,6 +44,45 @@ if not Fluent then
     return
 end
 
+-- Utility function để kiểm tra và lấy service/object một cách an toàn
+local function safeGetService(serviceName)
+    local success, service = pcall(function()
+        return game:GetService(serviceName)
+    end)
+    return success and service or nil
+end
+
+-- Utility function để kiểm tra và lấy child một cách an toàn
+local function safeGetChild(parent, childName, waitTime)
+    if not parent then return nil end
+    
+    local child = parent:FindFirstChild(childName)
+    
+    -- Chỉ sử dụng WaitForChild nếu thực sự cần thiết
+    if not child and waitTime and waitTime > 0 then
+        local success, result = pcall(function()
+            return parent:WaitForChild(childName, waitTime)
+        end)
+        if success then child = result end
+    end
+    
+    return child
+end
+
+-- Utility function để lấy đường dẫn đầy đủ một cách an toàn
+local function safeGetPath(startPoint, path, waitTime)
+    if not startPoint then return nil end
+    waitTime = waitTime or 0.5 -- Giảm thời gian chờ mặc định xuống 0.5 giây
+    
+    local current = startPoint
+    for _, name in ipairs(path) do
+        if not current then return nil end
+        current = safeGetChild(current, name, waitTime)
+    end
+    
+    return current
+end
+
 -- Hệ thống lưu trữ cấu hình
 local ConfigSystem = {}
 ConfigSystem.FileName = "AnimeSagaConfig_" .. game:GetService("Players").LocalPlayer.Name .. ".json"
@@ -55,6 +93,12 @@ ConfigSystem.DefaultConfig = {
     -- Cài đặt log
     LogsEnabled = true,
     WarningsEnabled = true,
+    
+    -- Cài đặt Story
+    SelectedMap = 1,
+    SelectedAct = 1,
+    SelectedDifficulty = 1,
+    AutoJoinStory = false,
     
     -- Các cài đặt khác sẽ được thêm vào sau
 }
@@ -147,6 +191,13 @@ ConfigSystem.LoadConfig()
 -- Thông tin người chơi
 local playerName = game:GetService("Players").LocalPlayer.Name
 
+-- Biến lưu trạng thái story
+local selectedMap = ConfigSystem.CurrentConfig.SelectedMap or 1
+local selectedAct = ConfigSystem.CurrentConfig.SelectedAct or 1
+local selectedDifficulty = ConfigSystem.CurrentConfig.SelectedDifficulty or 1
+local autoJoinStoryEnabled = ConfigSystem.CurrentConfig.AutoJoinStory or false
+local autoJoinStoryLoop = nil
+
 -- Tạo Window
 local Window = Fluent:CreateWindow({
     Title = "HT Hub | Anime Saga",
@@ -162,6 +213,12 @@ local Window = Fluent:CreateWindow({
 local InfoTab = Window:AddTab({
     Title = "Info",
     Icon = "rbxassetid://7733964719"
+})
+
+-- Tạo tab Play
+local PlayTab = Window:AddTab({
+    Title = "Play",
+    Icon = "rbxassetid://7743871480"
 })
 
 -- Thêm hỗ trợ Logo khi minimize
@@ -231,6 +288,158 @@ InfoSection:AddParagraph({
     Content = "Script được phát triển bởi Dương Tuấn và ghjiukliop"
 })
 
+-- Thêm section Story trong tab Play
+local StorySection = PlayTab:AddSection("Story")
+
+-- Hàm để tham gia Story
+local function joinStory()
+    local success, err = pcall(function()
+        -- Bước 1: Tạo phòng
+        local args1 = {
+            "Create",
+            "Story",
+            selectedMap,  -- Map (1 = Leaf Village, 2 = Marine Island, 3 = Red Light District, 4 = West City)
+            selectedAct,  -- Act (1-5)
+            selectedDifficulty,  -- Difficulty (1 = Normal, 2 = Hard, 3 = Nightmare)
+            false
+        }
+        
+        game:GetService("ReplicatedStorage"):WaitForChild("Event"):WaitForChild("JoinRoom"):FireServer(unpack(args1))
+        
+        -- Chờ một chút giữa hai lệnh
+        wait(1)
+        
+        -- Bước 2: Teleport vào gameplay
+        local args2 = {
+            [1] = "TeleGameplay",
+            [2] = "Story",
+            [3] = selectedMap,  -- Map (1 = Leaf Village, 2 = Marine Island, 3 = Red Light District, 4 = West City)
+            [4] = selectedAct,  -- Act (1-5)
+            [5] = selectedDifficulty,  -- Difficulty (1 = Normal, 2 = Hard, 3 = Nightmare)
+            [6] = false
+        }
+        
+        game:GetService("ReplicatedStorage").Event.JoinRoom:FireServer(unpack(args2))
+        
+        -- Hiển thị thông báo
+        local mapNames = {"Leaf Village", "Marine Island", "Red Light District", "West City"}
+        local difficultyNames = {"Normal", "Hard", "Nightmare"}
+        
+        print("Đã tham gia Story: " .. mapNames[selectedMap] .. " - Act " .. selectedAct .. " - " .. difficultyNames[selectedDifficulty])
+    end)
+    
+    if not success then
+        warn("Lỗi khi tham gia Story: " .. tostring(err))
+        return false
+    end
+    
+    return true
+end
+
+-- Kiểm tra xem người chơi đã ở trong map chưa
+local function isPlayerInMap()
+    -- Implement checking logic here
+    return false -- Placeholder
+end
+
+-- Dropdown để chọn Map
+StorySection:AddDropdown("MapDropdown", {
+    Title = "Choose Map",
+    Values = {"Leaf Village", "Marine Island", "Red Light District", "West City"},
+    Multi = false,
+    Default = selectedMap,
+    Callback = function(Value)
+        local mapIndex = {
+            ["Leaf Village"] = 1,
+            ["Marine Island"] = 2,
+            ["Red Light District"] = 3,
+            ["West City"] = 4
+        }
+        
+        selectedMap = mapIndex[Value]
+        ConfigSystem.CurrentConfig.SelectedMap = selectedMap
+        ConfigSystem.SaveConfig()
+        print("Đã chọn map: " .. Value .. " (index: " .. selectedMap .. ")")
+    end
+})
+
+-- Dropdown để chọn Act
+StorySection:AddDropdown("ActDropdown", {
+    Title = "Choose Act",
+    Values = {"1", "2", "3", "4", "5"},
+    Multi = false,
+    Default = tostring(selectedAct),
+    Callback = function(Value)
+        selectedAct = tonumber(Value)
+        ConfigSystem.CurrentConfig.SelectedAct = selectedAct
+        ConfigSystem.SaveConfig()
+        print("Đã chọn act: " .. Value)
+    end
+})
+
+-- Dropdown để chọn Difficulty
+StorySection:AddDropdown("DifficultyDropdown", {
+    Title = "Difficulty",
+    Values = {"Normal", "Hard", "Nightmare"},
+    Multi = false,
+    Default = ({"Normal", "Hard", "Nightmare"})[selectedDifficulty],
+    Callback = function(Value)
+        local difficultyIndex = {
+            ["Normal"] = 1,
+            ["Hard"] = 2,
+            ["Nightmare"] = 3
+        }
+        
+        selectedDifficulty = difficultyIndex[Value]
+        ConfigSystem.CurrentConfig.SelectedDifficulty = selectedDifficulty
+        ConfigSystem.SaveConfig()
+        print("Đã chọn difficulty: " .. Value .. " (index: " .. selectedDifficulty .. ")")
+    end
+})
+
+-- Toggle Auto Join Story
+StorySection:AddToggle("AutoJoinStoryToggle", {
+    Title = "Auto Join Story",
+    Default = autoJoinStoryEnabled,
+    Callback = function(Value)
+        autoJoinStoryEnabled = Value
+        ConfigSystem.CurrentConfig.AutoJoinStory = Value
+        ConfigSystem.SaveConfig()
+        
+        if autoJoinStoryEnabled then
+            print("Auto Join Story đã được bật")
+            
+            -- Thực hiện tham gia Story ngay lập tức
+            spawn(function()
+                if not isPlayerInMap() then
+                    joinStory()
+                else
+                    print("Đang ở trong map, Auto Join Story sẽ hoạt động khi bạn rời khỏi map")
+                end
+            end)
+            
+            -- Tạo vòng lặp Auto Join Story
+            spawn(function()
+                while autoJoinStoryEnabled and wait(5) do -- Kiểm tra mỗi 5 giây
+                    if not isPlayerInMap() then
+                        joinStory()
+                    end
+                end
+            end)
+        else
+            print("Auto Join Story đã được tắt")
+        end
+    end
+})
+
+-- Thêm nút Join Story ngay lập tức
+StorySection:AddButton({
+    Title = "Join Story Now",
+    Callback = function()
+        joinStory()
+    end
+})
+
 -- Thêm section thiết lập trong tab Settings
 local SettingsTab = Window:AddTab({
     Title = "Settings",
@@ -265,7 +474,7 @@ end
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    for _, tab in pairs({InfoTab, SettingsTab}) do
+    for _, tab in pairs({InfoTab, PlayTab, SettingsTab}) do
         if tab and tab._components then
             for _, element in pairs(tab._components) do
                 if element and element.OnChanged then
